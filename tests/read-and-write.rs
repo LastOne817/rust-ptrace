@@ -1,7 +1,6 @@
-#![feature(libc, std_misc)]
 extern crate libc;
 extern crate ptrace;
-extern crate "posix-ipc" as ipc;
+extern crate posix_ipc as ipc;
 
 use std::ffi::CString;
 use std::os;

@@ -1,28 +1,26 @@
-#[allow(unstable)]
 extern crate libc;
-extern crate "posix-ipc" as ipc;
+extern crate posix_ipc as ipc;
 #[macro_use]
 extern crate bitflags;
 
-use std::os;
+extern crate errno;
+use self::errno::errno;
 use std::ptr;
 use std::default::Default;
 use std::vec::Vec;
 use std::mem;
-use std::iter;
-use std::num::FromPrimitive;
 use std::cmp::min;
 
 pub type Address = u64;
 pub type Word = u64;
 
-#[derive(Copy)]
+#[derive(Clone, Copy)]
 pub enum Action {
   Allow,
   Kill
 }
 
-#[derive(Debug, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Request {
   TraceMe = 0,
   PeekText = 1,
@@ -42,7 +40,7 @@ pub enum Request {
   Seize = 0x4206
 }
 
-#[derive(Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, Debug)]
 pub enum Event {
   Fork = 1,
   VFork = 2,
@@ -56,12 +54,26 @@ pub enum Event {
 
 impl Event {
     pub fn from_wait_status(st: i32) -> Option<Event> {
-        let e: Option<Event> = FromPrimitive::from_i32(((st >> 8) & !5) >> 8);
+        let e: Option<Event> = Event::from_i32(((st >> 8) & !5) >> 8);
         return e;
+    }
+
+    pub fn from_i32(n: i32) -> Option<Event> {
+        match n {
+            1 => Some(Event::Fork),
+            2 => Some(Event::VFork),
+            3 => Some(Event::Clone),
+            4 => Some(Event::Exec),
+            5 => Some(Event::VForkDone),
+            6 => Some(Event::Exit),
+            7 => Some(Event::Seccomp),
+            128 => Some(Event::Stop),
+            _ => None,
+        }
     }
 }
 
-#[derive(Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Registers {
   pub r15: Word,
   pub r14: Word,
@@ -168,7 +180,7 @@ unsafe fn raw(request: Request,
        data: *mut libc::c_void) -> Result<libc::c_long, usize> {
   let v = ptrace (request as libc::c_int, pid, addr, data);
   match v {
-      -1 => Result::Err(os::errno()),
+      -1 => Result::Err(errno().0 as usize),
       _ => Result::Ok(v)
   }
 }
@@ -180,7 +192,7 @@ extern {
             data: *mut libc::c_void) -> libc::c_long;
 }
 
-#[derive(Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Syscall {
   pub args: [Word; 6],
   pub call: u64,
@@ -220,12 +232,12 @@ impl Syscall {
   }
 }
 
-#[derive(Copy)]
+#[derive(Clone, Copy)]
 pub struct Reader {
   pub pid: libc::pid_t
 }
 
-#[derive(Copy)]
+#[derive(Clone, Copy)]
 pub struct Writer {
     pub pid: libc::pid_t
 }
@@ -251,7 +263,7 @@ impl Writer {
         unsafe {
             let tptr: *const T = data;
             let p: *const u8 = mem::transmute(tptr);
-            for i in range(0, buf.capacity()) {
+            for i in (0..buf.capacity()) {
                 buf.push(*p.offset(i as isize));
             }
         }
@@ -264,10 +276,10 @@ impl Writer {
         let max_addr = address + buf.len() as Address;
         // The last word we can completely overwrite
         let align_end = max_addr - (max_addr % mem::size_of::<Word>() as Address);
-        for write_addr in iter::range_step(address, align_end, mem::size_of::<Word>() as Address) {
+        for write_addr in (address..align_end).filter(|x| (x % (mem::size_of::<Word>() as Address)) == 0) {
             let mut d: Word = 0;
             let buf_idx = (write_addr - address) as usize;
-            for word_idx in iter::range(0, mem::size_of::<Word>()) {
+            for word_idx in (0.. mem::size_of::<Word>()) {
                 d = set_byte(d, word_idx, buf[buf_idx + word_idx]);
             }
             match self.poke_data(write_addr, d) {
@@ -283,7 +295,7 @@ impl Writer {
                 Ok(v) => v,
                 Err(e) => return Err(e)
             };
-            for word_idx in iter::range(0, mem::size_of::<Word>()-2) {
+            for word_idx in (0..mem::size_of::<Word>()-2) {
                 let buf_idx = buf_start + word_idx;
                 d = set_byte(d, word_idx, buf[buf_idx]);
             }
@@ -319,13 +331,13 @@ impl Reader {
         let mut buf: Vec<u8> = Vec::with_capacity(1024);
         let max_addr = address + buf.capacity() as Address;
         let align_end = max_addr - (max_addr % mem::size_of::<Word>() as Address);
-        'finish: for read_addr in iter::range_step(address, align_end, mem::size_of::<Word>() as Address) {
+        'finish: for read_addr in (address..align_end).filter(|x| (x % (mem::size_of::<Word>() as Address)) == 0) {
             let d;
             match self.peek_data(read_addr) {
                 Ok(v) => d = v,
                 Err(e) => return Err(e)
             }
-            for word_idx in iter::range(0, mem::size_of::<Word>()) {
+            for word_idx in (0..mem::size_of::<Word>()) {
                 let chr = get_byte(d, word_idx);
                 if chr == 0 {
                     end_of_str = true;
@@ -340,7 +352,7 @@ impl Reader {
                 Ok(v) => d = v,
                 Err(e) => return Err(e)
             }
-            for word_idx in range(0, mem::size_of::<Word>()) {
+            for word_idx in (0..mem::size_of::<Word>()) {
                 let chr = get_byte(d, word_idx);
                 if chr == 0 {
                     break;

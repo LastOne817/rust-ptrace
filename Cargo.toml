@@ -1,9 +1,8 @@
 [package]
 name = "ptrace"
-version = "0.1.0"
-authors = ["Torrie Fischer <torrie@ripple.com>"]
+version = "0.1.2"
 description = "Rust bindings for the POSIX ptrace API"
-repository = "http://github.com/codius/rust-ptrace"
+repository = "http://github.com/LastOne817/rust-ptrace"
 license = "MIT"
 readme = "README.md"
 
@@ -12,4 +11,6 @@ name = "ptrace"
 
 [dependencies]
 bitflags = "0.1"
-posix-ipc = "0.0"
+posix-ipc = {version = "0.0", git = "https://github.com/LastOne817/rust-posix-ipc.git"}
+errno = "*"
+libc = "*"
